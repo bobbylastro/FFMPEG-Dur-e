@@ -1,4 +1,8 @@
 import express from 'express';
+import axios from 'axios';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import ffprobeInstaller from '@ffprobe-installer/ffprobe';
@@ -9,16 +13,28 @@ ffmpeg.setFfprobePath(ffprobeInstaller.path);
 const app = express();
 app.use(express.json());
 
-// Gestion globale des erreurs non interceptées
-process.on('uncaughtException', (err) => {
-  console.error('Exception non capturée :', err);
-});
+// Fonction pour télécharger localement le fichier audio depuis l'URL
+async function downloadAudioToTemp(url) {
+  const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 });
+  const tempFilePath = path.join(os.tmpdir(), `audio-${Date.now()}.mp3`);
+  await fs.writeFile(tempFilePath, response.data);
+  return tempFilePath;
+}
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Rejet non géré :', reason);
-});
+// Fonction pour obtenir la durée audio avec ffprobe
+function getAudioDuration(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) return reject(err);
+      if (!metadata || !metadata.format || !metadata.format.duration) {
+        return reject(new Error('Durée introuvable dans les métadonnées'));
+      }
+      resolve(metadata.format.duration);
+    });
+  });
+}
 
-app.post('/audio-duration', (req, res) => {
+app.post('/audio-duration', async (req, res) => {
   const { url } = req.body;
 
   if (!url) {
@@ -26,25 +42,27 @@ app.post('/audio-duration', (req, res) => {
     return res.status(400).json({ error: 'Le champ "url" est obligatoire dans le corps JSON' });
   }
 
-  ffmpeg.ffprobe(url, (err, metadata) => {
-    if (err) {
-      console.error('Erreur ffprobe lors de la récupération des métadonnées :', err);
-      return res.status(500).json({ error: 'Impossible de récupérer les métadonnées', details: err.message });
-    }
+  try {
+    console.log(`🎵 Téléchargement audio depuis: ${url}`);
+    const audioPath = await downloadAudioToTemp(url);
 
-    const duration = metadata.format.duration;
+    console.log('⏳ Analyse de la durée audio...');
+    const duration = await getAudioDuration(audioPath);
 
-    if (!duration) {
-      console.error('Durée introuvable dans les métadonnées du fichier audio');
-      return res.status(404).json({ error: 'Durée introuvable dans les métadonnées du fichier audio' });
-    }
+    console.log(`✅ Durée du fichier audio : ${duration.toFixed(2)} secondes`);
 
-    console.log(`Durée récupérée avec succès : ${duration} secondes`);
+    // Nettoyage du fichier temporaire
+    await fs.unlink(audioPath);
+    console.log('🧹 Fichier temporaire supprimé');
+
     return res.json({ duration });
-  });
+  } catch (error) {
+    console.error('❌ Erreur lors du traitement de la durée audio :', error.message);
+    return res.status(500).json({ error: 'Erreur lors de la récupération de la durée audio', details: error.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Audio duration API démarrée sur le port ${PORT}`);
+  console.log(`✅ Serveur lancé sur http://localhost:${PORT}`);
 });

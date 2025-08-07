@@ -1,7 +1,7 @@
 {
   "name": "audio-duration-api",
   "version": "1.0.0",
-  "description": "API simple pour récupérer la durée d'un fichier audio via ffprobe",
+  "description": "API Node.js express pour récupérer la durée d'un fichier MP3 via ffprobe",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^1.1.0",
+    "axios": "^1.4.0",
     "express": "^4.18.3",
     "fluent-ffmpeg": "^2.1.2"
   }
